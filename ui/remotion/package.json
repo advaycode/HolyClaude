@@ -1,0 +1,25 @@
+{
+  "name": "holyclaude-remotion",
+  "version": "1.0.0",
+  "description": "Remotion video compositions for HolyClaude research briefings",
+  "scripts": {
+    "start":  "npx remotion studio",
+    "render:research": "npx remotion render src/Root.tsx ResearchVideo out/research.mp4",
+    "render:overnight": "npx remotion render src/Root.tsx OvernightBriefing out/briefing.mp4",
+    "render:all": "npm run render:research && npm run render:overnight"
+  },
+  "dependencies": {
+    "@remotion/cli": "^4.0.0",
+    "remotion": "^4.0.0",
+    "react": "^18.0.0",
+    "react-dom": "^18.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.0.0",
+    "@types/react-dom": "^18.0.0",
+    "typescript": "^5.0.0"
+  },
+  "remotion": {
+    "entryPoint": "src/Root.tsx"
+  }
+}
