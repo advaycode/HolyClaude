@@ -22,6 +22,7 @@ Usage:
 """
 from __future__ import annotations
 
+import argparse
 import json
 import subprocess
 import sys
@@ -331,8 +332,6 @@ def main() -> None:
     parser.add_argument("--vault", default="", help="Obsidian vault dir")
     parser.add_argument("--parallel", action="store_true", help="Run tasks in parallel threads")
     args = parser.parse_args()
-
-    import argparse
 
     vault = Path(args.vault) if args.vault else None
     agent = OvernightAgent(vault_dir=vault)
