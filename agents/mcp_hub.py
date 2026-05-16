@@ -7,15 +7,21 @@ Register in Claude Code (Settings > MCP Servers):
   Args:    C:/Users/advay/HolyClaude/agents/mcp_hub.py
 
 Tools exposed:
-  search_knowledge(query)         — vault keyword search
-  run_crawler(topic, keywords)    — launch CrawlerAgent
-  verify_catalog(path)            — run VerifierAgent on a catalog
-  write_knowledge(catalog_path)   — write Obsidian notes
-  optimize_prompt(prompt)         — PromptOptimizer routing + plan
-  run_research(topic, n)          — full YouTube→NotebookLM pipeline
-  run_ollama(prompt, task_type)   — direct Ollama agent call
-  list_agents()                   — list all available agents + status
-  pipeline_status()               — check which tools are installed
+  search_knowledge(query)           — vault keyword search
+  optimize_prompt(prompt)           — PromptOptimizer routing + plan
+  run_ollama(prompt, task_type)     — direct Ollama agent call
+  run_research(topic, n)            — full YouTube→NotebookLM pipeline
+  run_crawler(topic, keywords)      — launch CrawlerAgent
+  verify_catalog(path)              — run VerifierAgent on a catalog
+  write_vault(catalog_path)         — write Obsidian hub notes + KNOWLEDGE_GRAPH
+  implement_plan(plan_path)         — CodeAgent: implement from plan file
+  review_file(file_path)            — CodeAgent: review source file
+  generate_plan(task)               — CodeAgent: create implementation plan
+  scrape_url(url, schema)           — PlaywrightAgent: structured web scrape
+  run_study(subject, artifact)      — StudyAgent: daily study pipeline
+  run_overnight(tasks_json)         — OvernightAgent: batch background tasks
+  list_agents()                     — list all available agents + status
+  pipeline_status()                 — check which tools are installed
 """
 from __future__ import annotations
 
@@ -126,6 +132,202 @@ if _MCP_AVAILABLE:
         return agent.chat(prompt, system=system, stream=False, print_stream=False)
 
     @mcp.tool()
+    def run_crawler(
+        topic: str,
+        keywords: list[str] | None = None,
+        output_dir: str = "",
+        min_relevance: float = 0.10,
+        workers: int = 4,
+        include_zenodo: bool = False,
+    ) -> dict:
+        """
+        Run the multi-source web crawler (PubMed + ArXiv + optional Zenodo).
+        Returns catalog stats and output path.
+        """
+        from agents.crawler_agent import CrawlerAgent, PubMedSource, ArXivSource, ZenodoSource
+        kws = keywords or topic.split()
+        out = Path(output_dir) if output_dir else CATALOG_DIR / topic.replace(" ", "_")[:40]
+        crawler = CrawlerAgent(
+            topic=topic, keywords=kws,
+            output_dir=out, workers=workers, min_relevance=min_relevance,
+        )
+        crawler.add_source(PubMedSource(queries=[f"{topic} {kw}" for kw in kws[:2]]))
+        crawler.add_source(ArXivSource(query=f"{topic} {kws[0]}"))
+        if include_zenodo:
+            crawler.add_source(ZenodoSource(queries=[topic]))
+        catalog = crawler.run()
+        return {
+            "output_dir": str(out),
+            "catalog_path": str(out / "catalog.json"),
+            "stats": catalog.get("stats", {}),
+        }
+
+    @mcp.tool()
+    def verify_catalog(catalog_path: str, domain: str = "", min_score: int = 6) -> dict:
+        """
+        Run Gemma-based LLM verifier (L6) on an existing catalog JSON.
+        Scores each record 1-10 for relevance. Adds gemma_score/gemma_reason fields.
+        """
+        from agents.verifier_agent import VerifierAgent
+        agent = VerifierAgent(domain=domain, min_pass_score=min_score)
+        if not agent.health_check():
+            return {"error": "Ollama offline — run: ollama serve"}
+        out_path = agent.verify_catalog(Path(catalog_path))
+        return {"verified_catalog": str(out_path)}
+
+    @mcp.tool()
+    def write_vault(
+        catalog_path: str,
+        vault_path: str = "",
+        project_name: str = "Research",
+        min_gemma: int = 6,
+        min_relevance: float = 0.0,
+    ) -> dict:
+        """
+        Write Obsidian hub notes and KNOWLEDGE_GRAPH.md from a verified catalog.
+        Creates _HUB_ARTICLES.md, _HUB_DATASETS.md, etc. + root KNOWLEDGE_GRAPH.md.
+        """
+        from agents.hub_writer import HubWriter
+        vault = Path(vault_path) if vault_path else VAULT_DIR.parent / "Research"
+        writer = HubWriter(
+            vault_dir=vault, project_name=project_name,
+            min_gemma=min_gemma, min_relevance=min_relevance,
+        )
+        stats = writer.write_catalog(Path(catalog_path))
+        return {"vault": str(vault), "stats": stats}
+
+    @mcp.tool()
+    def implement_plan(
+        plan_path: str,
+        project_root: str = "",
+        model: str = "gemma3:4b",
+    ) -> str:
+        """
+        Use CodeAgent to implement a plan file (Markdown spec → code).
+        Reads CLAUDE.md, REPO_MAP.md, KNOWN_BUGS.md from project_root for context.
+        plan_path: path to a .md plan file.
+        """
+        from agents.code_agent import CodeAgent
+        agent = CodeAgent(
+            project_root=Path(project_root) if project_root else None,
+            model=model,
+        )
+        if not agent.health_check():
+            return "ERROR: Ollama offline"
+        return agent.implement(Path(plan_path))
+
+    @mcp.tool()
+    def review_file(
+        file_path: str,
+        project_root: str = "",
+        model: str = "gemma3:4b",
+    ) -> str:
+        """
+        Use CodeAgent to review a source file for bugs, style, and improvements.
+        """
+        from agents.code_agent import CodeAgent
+        agent = CodeAgent(
+            project_root=Path(project_root) if project_root else None,
+            model=model,
+        )
+        if not agent.health_check():
+            return "ERROR: Ollama offline"
+        return agent.review(Path(file_path))
+
+    @mcp.tool()
+    def generate_plan(
+        task: str,
+        project_root: str = "",
+        model: str = "gemma3:4b",
+    ) -> str:
+        """
+        Use CodeAgent to generate a step-by-step implementation plan for a task.
+        """
+        from agents.code_agent import CodeAgent
+        agent = CodeAgent(
+            project_root=Path(project_root) if project_root else None,
+            model=model,
+        )
+        if not agent.health_check():
+            return "ERROR: Ollama offline"
+        return agent.plan(task)
+
+    @mcp.tool()
+    def scrape_url(
+        url: str,
+        schema: dict[str, str] | None = None,
+        multi: bool = False,
+        screenshot_path: str = "",
+        headless: bool = True,
+    ) -> dict:
+        """
+        Use PlaywrightAgent to scrape a URL.
+        schema: {"field": "css_selector"} or {"field": "selector@attribute"}
+        multi: scrape multiple items matching selectors (returns list)
+        """
+        from agents.playwright_agent import PlaywrightAgent
+        with PlaywrightAgent(headless=headless) as pw:
+            if screenshot_path:
+                path = pw.screenshot(url, Path(screenshot_path))
+                return {"screenshot": str(path)}
+            elif schema:
+                data = pw.scrape_structured(url, schema, multi=multi)
+                return {"data": data, "url": url}
+            else:
+                links = pw.extract_links(url)
+                return {"links": links[:50], "url": url}
+
+    @mcp.tool()
+    def run_study(
+        subject: str = "ap-physics",
+        artifact: str = "video",
+        n_videos: int = 4,
+        force_topic: int | None = None,
+        dry_run: bool = False,
+    ) -> dict:
+        """
+        Run the daily study pipeline for AP Physics, AP Stats, or a custom subject.
+        Picks today's topic from rotation → finds YouTube videos → sends to NotebookLM.
+        subject: "ap-physics" | "ap-stats" | comma-separated custom topics
+        artifact: "video" | "report" | "flashcards" | "slides" | "mindmap"
+        """
+        from agents.study_agent import StudyAgent
+        subjects = {"ap-physics": StudyAgent.ap_physics, "ap-stats": StudyAgent.ap_stats}
+        builder = subjects.get(subject)
+        if builder:
+            agent = builder()
+        else:
+            topics = [t.strip() for t in subject.split(",")]
+            agent = StudyAgent.custom(topics=topics, subject="Custom")
+        return agent.run_daily(n_videos=n_videos, artifact=artifact, force_topic=force_topic, dry_run=dry_run)
+
+    @mcp.tool()
+    def run_overnight(
+        tasks_json: str,
+        vault_path: str = "",
+        parallel: bool = False,
+    ) -> dict:
+        """
+        Run overnight background tasks from a JSON task list string.
+        tasks_json: JSON array of {task_type, label, ...params}
+        task_type: "research" | "study" | "crawl" | "script" | "prompt"
+        Returns the morning briefing and task statuses.
+        """
+        import tempfile
+        from agents.overnight_agent import OvernightAgent
+        vault = Path(vault_path) if vault_path else None
+        agent = OvernightAgent(vault_dir=vault)
+        tasks = json.loads(tasks_json)
+        tmp = Path(tempfile.mktemp(suffix=".json"))
+        tmp.write_text(json.dumps(tasks), encoding="utf-8")
+        try:
+            agent.load_tasks_from_json(tmp)
+        finally:
+            tmp.unlink(missing_ok=True)
+        report = agent.run(parallel=parallel)
+        return report.to_dict()
+
+    @mcp.tool()
     def list_agents() -> dict:
         """
         List all available HolyClaude agents and their status.
@@ -150,8 +352,13 @@ if _MCP_AVAILABLE:
                 "crawler_agent":    {"file": "agents/crawler_agent.py",     "status": "ready"},
                 "verifier_agent":   {"file": "agents/verifier_agent.py",    "status": "ready"},
                 "knowledge_writer": {"file": "agents/knowledge_writer.py",  "status": "ready"},
+                "hub_writer":       {"file": "agents/hub_writer.py",        "status": "ready"},
                 "prompt_optimizer": {"file": "agents/prompt_optimizer.py",  "status": "ready"},
                 "research_pipeline":{"file": "agents/research_pipeline.py", "status": "ready"},
+                "code_agent":       {"file": "agents/code_agent.py",        "status": "ready"},
+                "study_agent":      {"file": "agents/study_agent.py",       "status": "ready"},
+                "overnight_agent":  {"file": "agents/overnight_agent.py",   "status": "ready"},
+                "playwright_agent": {"file": "agents/playwright_agent.py",  "status": "ready"},
                 "mcp_hub":          {"file": "agents/mcp_hub.py",           "status": "running"},
             },
             "external_tools": {
