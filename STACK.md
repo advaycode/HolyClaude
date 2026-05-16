@@ -210,7 +210,6 @@ Obsidian/
       Web & Design.md
       ...
     Code/
-      neurolens/          ← eye-tracking app
       stock-trader/       ← trading bot
   OpenMontage/            ← agentic video platform
   Claude/Memory/          ← auto-memory (this repo's KnowledgeWriter target)

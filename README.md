@@ -61,7 +61,6 @@ HolyClaude is the distilled meta-framework behind every AI project Advay has bui
 | Project | Stack | Status |
 |---|---|---|
 | **GNN-PCNA** | PyTorch Geometric, GATv2Conv, Streamlit, 13-source crawler, Gemma L6 | Model trained, cryptic pockets identified |
-| **NeuroLens+** | Eye-tracking, React, Python | Paused |
 | **Stock Trader** | Alpaca API, ML signals | Blocked on API keys |
 | **OpenMontage** | Remotion, FFmpeg, 52 tools, 12 workflows | Ready |
 | **Faceless Pipeline** | AI video factory, revenue tracking | Active |
