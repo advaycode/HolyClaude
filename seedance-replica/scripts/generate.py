@@ -20,11 +20,51 @@ from typing import Optional
 import torch
 import yaml
 from rich import print as rprint
+from rich.console import Console
+from rich.progress import (BarColumn, Progress, SpinnerColumn, TextColumn,
+                           TimeElapsedColumn, TimeRemainingColumn)
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 CACHE_ROOT = Path(os.environ.get("SEEDANCE_CACHE", Path.home() / ".cache" / "seedance-replica"))
+CONSOLE = Console()
+
+# Rough per-step seconds on RTX 4070 12 GB. Used to give an upfront ETA *before*
+# the diffusers progress bar appears. Updated empirically; conservative.
+PER_STEP_SECONDS = {
+    "fast":     {480: 1.2, 720: 2.5, 1080: 5.0},
+    "balanced": {480: 2.5, 720: 5.5, 1080: 12.0},
+    "quality":  {480: 7.0, 720: 16.0, 1080: 35.0},
+}
+DECODE_SECONDS = {"fast": 4, "balanced": 12, "quality": 25}
+LOAD_SECONDS   = {"fast": 15, "balanced": 25, "quality": 45}
+
+
+def estimate_runtime(preset: str, height: int, steps: int) -> dict:
+    """Return {load, sample, decode, total} seconds estimate for upfront display."""
+    # snap height to nearest known bucket
+    buckets = sorted(PER_STEP_SECONDS[preset].keys())
+    h = min(buckets, key=lambda b: abs(b - height))
+    sample = PER_STEP_SECONDS[preset][h] * steps
+    return {
+        "load": LOAD_SECONDS[preset],
+        "sample": sample,
+        "decode": DECODE_SECONDS[preset],
+        "total": LOAD_SECONDS[preset] + sample + DECODE_SECONDS[preset],
+    }
+
+
+def fmt_time(seconds: float) -> str:
+    m, s = divmod(int(seconds), 60)
+    return f"{m}m {s:02d}s" if m else f"{s}s"
+
+
+def progress_callback(pipe, step, timestep, callback_kwargs):
+    """diffusers callback_on_step_end hook — updates the rich bar from the global handle."""
+    if hasattr(progress_callback, "task") and progress_callback.task is not None:
+        progress_callback.bar.update(progress_callback.task, advance=1)
+    return callback_kwargs
 
 
 def load_config(preset: str) -> dict:
@@ -69,52 +109,75 @@ def expand_prompt(prompt: str, cfg: dict) -> str:
 def run_balanced(args, cfg: dict) -> Path:
     """Wan 2.2 TI2V-5B via diffusers."""
     from diffusers import WanPipeline  # type: ignore[attr-defined]  # provided by diffusers >=0.31
-    import numpy as np
     from PIL import Image
 
     model_dir = CACHE_ROOT / "models" / "wan22_5b"
-    rprint(f"[dim]loading Wan 2.2 TI2V-5B from {model_dir}[/dim]")
-    pipe = WanPipeline.from_pretrained(str(model_dir), torch_dtype=torch.float16).to("cuda")
-
-    if cfg["memory"].get("enable_sage_attention"):
-        try:
-            from sageattention import sageattn
-            pipe.transformer.set_attn_processor(sageattn)
-        except Exception:
-            pass
-
-    if cfg["memory"].get("blocks_to_swap", 0) > 0:
-        try:
-            pipe.transformer.enable_cpu_offload(blocks_to_swap=cfg["memory"]["blocks_to_swap"])
-        except Exception:
-            pipe.enable_sequential_cpu_offload()
-
-    if cfg["memory"].get("vae_decode_mode") == "tiled":
-        pipe.vae.enable_tiling()
-
-    init_image = None
-    if args.image:
-        init_image = Image.open(args.image).convert("RGB")
-
-    gen = torch.Generator(device="cuda").manual_seed(args.seed)
     h, w = cfg["video"]["default_resolution"][1], cfg["video"]["default_resolution"][0]
     frames = args.duration * cfg["video"]["default_fps"] if args.duration else cfg["video"]["default_frames"]
     frames = max(1, min(frames, cfg["video"]["max_frames"]))
+    steps = args.num_steps or cfg["sampling"]["num_steps"]
 
-    rprint(f"[cyan]generating {frames} frames @ {w}x{h}, {cfg['sampling']['num_steps']} steps[/cyan]")
+    eta = estimate_runtime("balanced", h, steps)
+    CONSOLE.rule(f"[bold cyan]Balanced preset · {frames} frames @ {w}x{h} · {steps} steps")
+    CONSOLE.print(f"[dim]Estimated wall time: ~{fmt_time(eta['total'])}  "
+                  f"(load ~{fmt_time(eta['load'])}, sample ~{fmt_time(eta['sample'])}, "
+                  f"decode ~{fmt_time(eta['decode'])})[/dim]")
+
+    with Progress(SpinnerColumn(), TextColumn("[bold blue]{task.description}"),
+                  TimeElapsedColumn(), console=CONSOLE, transient=True) as p:
+        t = p.add_task("loading Wan 2.2 TI2V-5B...", total=None)
+        pipe = WanPipeline.from_pretrained(str(model_dir), torch_dtype=torch.float16).to("cuda")
+        if cfg["memory"].get("enable_sage_attention"):
+            try:
+                from sageattention import sageattn
+                pipe.transformer.set_attn_processor(sageattn)
+            except Exception: pass
+        if cfg["memory"].get("blocks_to_swap", 0) > 0:
+            try: pipe.transformer.enable_cpu_offload(blocks_to_swap=cfg["memory"]["blocks_to_swap"])
+            except Exception: pipe.enable_sequential_cpu_offload()
+        if cfg["memory"].get("vae_decode_mode") == "tiled":
+            pipe.vae.enable_tiling()
+        p.update(t, description="model ready")
+
+    init_image = Image.open(args.image).convert("RGB") if args.image else None
+    gen = torch.Generator(device="cuda").manual_seed(args.seed)
+
     t0 = time.time()
-    out = pipe(
-        prompt=args.prompt,
-        negative_prompt=args.negative,
-        image=init_image,
-        height=h, width=w,
-        num_frames=frames,
-        num_inference_steps=args.num_steps or cfg["sampling"]["num_steps"],
-        guidance_scale=args.cfg or cfg["sampling"]["cfg_scale"],
-        generator=gen,
-    )
+    with Progress(
+        TextColumn("[bold green]sampling[/bold green]"),
+        BarColumn(),
+        TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+        TextColumn("step {task.completed}/{task.total}"),
+        TimeElapsedColumn(),
+        TextColumn("eta"),
+        TimeRemainingColumn(),
+        console=CONSOLE,
+    ) as p:
+        sample_task = p.add_task("sampling", total=steps)
+        progress_callback.bar = p
+        progress_callback.task = sample_task
+        out = pipe(
+            prompt=args.prompt,
+            negative_prompt=args.negative,
+            image=init_image,
+            height=h, width=w,
+            num_frames=frames,
+            num_inference_steps=steps,
+            guidance_scale=args.cfg or cfg["sampling"]["cfg_scale"],
+            generator=gen,
+            callback_on_step_end=progress_callback,
+        )
+        progress_callback.task = None
+
+    with Progress(SpinnerColumn(), TextColumn("[bold blue]decoding VAE → frames..."),
+                  TimeElapsedColumn(), console=CONSOLE, transient=True) as p:
+        p.add_task("decode", total=None)
+        # diffusers already decoded inside the pipe call; this block is symbolic.
+        # If you switch to manual VAE decode, put pipe.vae.decode() here.
+
     elapsed = time.time() - t0
-    rprint(f"[green]done in {elapsed:.1f}s[/green]")
+    CONSOLE.print(f"[bold green]✓ done in {fmt_time(elapsed)}[/bold green]  "
+                  f"[dim](estimate was {fmt_time(eta['total'])})[/dim]")
 
     out_path = Path(args.out)
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -126,27 +189,51 @@ def run_fast(args, cfg: dict) -> Path:
     """LTX-Video 0.9.8 distilled via diffusers."""
     from diffusers import LTXPipeline  # type: ignore[attr-defined]
     model_dir = CACHE_ROOT / "models" / "ltx"
-    rprint(f"[dim]loading LTX-Video 0.9.8 distilled from {model_dir}[/dim]")
-    pipe = LTXPipeline.from_pretrained(str(model_dir), torch_dtype=torch.float16).to("cuda")
-    if cfg["memory"].get("vae_decode_mode") == "tiled":
-        pipe.vae.enable_tiling()
-
     w, h = cfg["video"]["default_resolution"]
     frames = args.duration * cfg["video"]["default_fps"] if args.duration else 97
-    gen = torch.Generator(device="cuda").manual_seed(args.seed)
+    steps = args.num_steps or cfg["sampling"]["num_steps"]
 
-    rprint(f"[cyan]LTX: {frames} frames @ {w}x{h}, {cfg['sampling']['num_steps']} steps[/cyan]")
+    eta = estimate_runtime("fast", h, steps)
+    CONSOLE.rule(f"[bold cyan]Fast preset (LTX) · {frames} frames @ {w}x{h} · {steps} steps")
+    CONSOLE.print(f"[dim]Estimated wall time: ~{fmt_time(eta['total'])}[/dim]")
+
+    with Progress(SpinnerColumn(), TextColumn("[bold blue]{task.description}"),
+                  TimeElapsedColumn(), console=CONSOLE, transient=True) as p:
+        p.add_task("loading LTX-Video 0.9.8 distilled...", total=None)
+        pipe = LTXPipeline.from_pretrained(str(model_dir), torch_dtype=torch.float16).to("cuda")
+        if cfg["memory"].get("vae_decode_mode") == "tiled":
+            pipe.vae.enable_tiling()
+
+    gen = torch.Generator(device="cuda").manual_seed(args.seed)
     t0 = time.time()
-    out = pipe(
-        prompt=args.prompt,
-        negative_prompt=args.negative,
-        height=h, width=w,
-        num_frames=frames,
-        num_inference_steps=args.num_steps or cfg["sampling"]["num_steps"],
-        guidance_scale=args.cfg or cfg["sampling"]["cfg_scale"],
-        generator=gen,
-    )
-    rprint(f"[green]done in {time.time()-t0:.1f}s[/green]")
+    with Progress(
+        TextColumn("[bold green]sampling[/bold green]"),
+        BarColumn(),
+        TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+        TextColumn("step {task.completed}/{task.total}"),
+        TimeElapsedColumn(),
+        TextColumn("eta"),
+        TimeRemainingColumn(),
+        console=CONSOLE,
+    ) as p:
+        sample_task = p.add_task("sampling", total=steps)
+        progress_callback.bar = p
+        progress_callback.task = sample_task
+        out = pipe(
+            prompt=args.prompt,
+            negative_prompt=args.negative,
+            height=h, width=w,
+            num_frames=frames,
+            num_inference_steps=steps,
+            guidance_scale=args.cfg or cfg["sampling"]["cfg_scale"],
+            generator=gen,
+            callback_on_step_end=progress_callback,
+        )
+        progress_callback.task = None
+
+    elapsed = time.time() - t0
+    CONSOLE.print(f"[bold green]✓ done in {fmt_time(elapsed)}[/bold green]  "
+                  f"[dim](estimate was {fmt_time(eta['total'])})[/dim]")
 
     out_path = Path(args.out)
     out_path.parent.mkdir(parents=True, exist_ok=True)

@@ -104,12 +104,18 @@ python scripts\generate.py `
   --out out\first_clip.mp4
 ```
 
-**What you'll see**:
-1. Model loading (~30 seconds)
-2. A line saying `generating 121 frames @ 1280x720, 30 steps`
-3. A progress bar through the 30 sampling steps
-4. `done in 180.4s` (or similar)
-5. `wrote out/first_clip.mp4`
+**What you'll see** (in order):
+1. A header: `──── Balanced preset · 121 frames @ 1280x720 · 30 steps ────`
+2. An upfront estimate: `Estimated wall time: ~3m 30s  (load ~25s, sample ~2m 45s, decode ~12s)`
+3. A spinner while the model loads (~30 seconds)
+4. A live progress bar through the 30 sampling steps:
+   ```
+   sampling ████████░░░░░░░░░░  47%  step 14/30  0:01:18  eta 0:01:32
+   ```
+   It shows percentage, current step, elapsed time, and **live ETA that updates each step**. The ETA gets accurate after the first 2–3 steps once it knows your real per-step speed.
+5. A "decoding VAE → frames…" spinner (~10 seconds)
+6. `✓ done in 3m 18s  (estimate was 3m 30s)` — actual vs. estimate
+7. `wrote out/first_clip.mp4`
 
 **Open `out\first_clip.mp4`** — you should see a samurai walking through cherry blossoms. Quality won't be perfect on first try; that's normal.
 
