@@ -3,5 +3,8 @@ __pycache__/
 *.pyc
 *.pyo
 data/
+!seedance-replica/data/
+!seedance-replica/data/prompts/
+!seedance-replica/data/prompts/*
 *.tmp.json
 .DS_Store

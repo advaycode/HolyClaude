@@ -1,0 +1,17 @@
+[
+  {
+    "prompt": "a hooded figure stands on a rain-slick Tokyo rooftop at night, neon signs reflecting in puddles below, hood up",
+    "duration": 5,
+    "motion": "static"
+  },
+  {
+    "prompt": "the figure turns and walks toward the camera, neon flickering across their face",
+    "duration": 5,
+    "motion": "dolly_in"
+  },
+  {
+    "prompt": "close-up of the figure's eyes, neon reflecting in them, a single raindrop runs down the lens",
+    "duration": 5,
+    "motion": "push_in"
+  }
+]

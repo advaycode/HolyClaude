@@ -77,6 +77,8 @@ seedance-replica/
 
 ## Quickstart
 
+> **First-time user?** Open [`RISHI_START_HERE.md`](RISHI_START_HERE.md) instead — it's a friendlier walkthrough with what-to-expect at every step.
+
 ```powershell
 # 1. clone (you already did this if you're reading the file)
 git clone -b seedance-replica https://github.com/advaycode/HolyClaude
