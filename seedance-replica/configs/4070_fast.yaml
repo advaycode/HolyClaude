@@ -1,0 +1,42 @@
+# Fast preset — LTX-Video 0.9.8 distilled
+# Target: ~30 s for 4 s @ 768x512 on RTX 4070 12 GB
+
+name: fast
+description: "LTX-Video 0.9.8 13B distilled. Real-time-ish iteration. Lowest quality of the three."
+
+backbone:
+  model_id: "Lightricks/LTX-Video-0.9.8-13B-distilled"
+  variant: "fp8"            # use the bundled fp8 weights
+  files:
+    transformer: "ltxv-13b-0.9.8-distilled-fp8.safetensors"
+    vae: "ltxv-vae.safetensors"
+    text_encoder: "T5-XXL-fp8"
+
+text_encoder:
+  model: "T5-XXL"
+  precision: "fp8"
+  offload_to_cpu: true
+
+sampling:
+  num_steps: 8              # distilled, no CFG, fewer steps
+  cfg_scale: 1.0            # no CFG for distilled LTX
+  sampler: "euler"
+  scheduler: "simple"
+  shift: 3.0                # LTX-specific flow shift
+
+video:
+  default_resolution: [768, 512]
+  max_resolution: [1216, 704]
+  default_fps: 24
+  default_duration_s: 4
+  max_duration_s: 10
+  max_frames: 257
+
+memory:
+  vae_decode_mode: "tiled"
+  blocks_to_swap: 0         # LTX-distilled fits without swap
+  enable_torch_compile: false
+  enable_sage_attention: true
+
+paths:
+  cache_dir: "~/.cache/seedance-replica/models/ltx"

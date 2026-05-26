@@ -1,0 +1,68 @@
+# Quality preset — Wan 2.2 T2V-A14B GGUF Q5_K_M + upscale + interpolate
+# Target: ~8 min for 5 s @ 480p native → 1080p upscale, 60 fps on RTX 4070 12 GB
+
+name: quality
+description: "Wan 2.2 14B MoE in GGUF Q5_K_M, with Real-ESRGAN upscale and RIFE 60 fps interpolation."
+
+backbone:
+  model_id: "QuantStack/Wan2.2-T2V-A14B-GGUF"
+  variant: "gguf-Q5_K_M"
+  files:
+    transformer_high_noise: "Wan2_2-T2V-A14B-HighNoise-Q5_K_M.gguf"
+    transformer_low_noise: "Wan2_2-T2V-A14B-LowNoise-Q5_K_M.gguf"
+    vae: "Wan2_2_VAE.safetensors"
+    tokenizer: "tokenizer/"
+  moe:
+    enabled: true
+    snr_threshold: 0.875       # switch experts at this SNR (Wan default)
+
+text_encoder:
+  model: "google/umt5-xxl"
+  precision: "fp16"
+  offload_to_cpu: true
+
+sampling:
+  num_steps: 30
+  cfg_scale: 6.0
+  sampler: "unipc"             # Wan team recommends unipc for MoE
+  scheduler: "simple"
+  shift: 5.0
+
+video:
+  default_resolution: [832, 480]   # native diffusion at 480p for VRAM
+  max_resolution: [832, 480]
+  default_fps: 24
+  default_duration_s: 5
+  default_frames: 81
+  max_frames: 121
+
+postprocess:
+  upscale:
+    enabled: true
+    model: "RealESRGAN_x2plus"
+    factor: 2                    # 832x480 → 1664x960; we crop/pad to 1920x1080
+    target_resolution: [1920, 1080]
+  interpolate:
+    enabled: true
+    model: "RIFE-4.6"
+    target_fps: 60
+
+memory:
+  vae_decode_mode: "tiled"
+  tile_size: 192
+  blocks_to_swap: 30             # aggressive swap; needs 32 GB RAM
+  enable_torch_compile: true
+  enable_sage_attention: true
+  fp8_cast: false                # GGUF Q5_K_M is already quantized; no fp8 on top
+
+prompt_expander:
+  enabled: true
+  model: "Qwen2.5-7B-Instruct-Q4_K_M.gguf"
+  system_prompt: |
+    You are a cinematographer. Rewrite the user's video prompt as a detailed shot description.
+    Include: camera (lens, movement, angle), lighting (key, fill, mood), composition (framing,
+    depth of field), motion (subject + camera + secondary motion), atmosphere. Keep it under
+    80 words. Output only the rewritten prompt, no preamble.
+
+paths:
+  cache_dir: "~/.cache/seedance-replica/models/wan22_14b"

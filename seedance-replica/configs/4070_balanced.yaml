@@ -1,0 +1,45 @@
+# Balanced preset — Wan 2.2 TI2V-5B native fp16
+# Target: ~3 min for 5 s @ 720p on RTX 4070 12 GB. Recommended default.
+
+name: balanced
+description: "Wan 2.2 TI2V-5B native fp16. Best quality-per-second on 12 GB."
+
+backbone:
+  model_id: "Wan-AI/Wan2.2-TI2V-5B"
+  variant: "fp16"
+  files:
+    transformer: "diffusion_pytorch_model-00001-of-00003.safetensors"   # diffusers shards
+    vae: "Wan2_2_VAE.safetensors"
+    text_encoder_tokenizer: "tokenizer/"
+
+text_encoder:
+  model: "google/umt5-xxl"
+  precision: "fp16"
+  offload_to_cpu: true       # ~9 GB, never on GPU during diffusion
+
+sampling:
+  num_steps: 30
+  cfg_scale: 6.0
+  sampler: "dpmpp_2m_sde"
+  scheduler: "karras"
+  shift: 5.0                 # Wan flow shift, sensitive — keep at 5
+
+video:
+  default_resolution: [1280, 720]
+  max_resolution: [1280, 720]
+  default_fps: 24
+  default_duration_s: 5
+  max_duration_s: 5
+  default_frames: 81         # native Wan window: 81 frames @ 24 fps ≈ 3.4 s
+  max_frames: 121
+
+memory:
+  vae_decode_mode: "tiled"
+  tile_size: 256
+  blocks_to_swap: 20         # offload 20 of ~40 DiT blocks to CPU RAM
+  enable_torch_compile: false  # set true for ~30% speedup after warm-up
+  enable_sage_attention: true
+  fp8_cast: false            # 5B fits in fp16; only fp8 if you OOM
+
+paths:
+  cache_dir: "~/.cache/seedance-replica/models/wan22_5b"
