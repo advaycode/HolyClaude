@@ -36,6 +36,7 @@ namespace CadCopilot
                 UserInterfaceManager uim = _app.UserInterfaceManager;
                 _dock = uim.DockableWindows.Add(ClientId, "CadCopilotPanel", "CADCopilot");
                 _dock.ShowVisibilityCheckBox = true;
+                _dock.SetMinimumSize(480, 360);   // (Height, Width) — keeps the pane from collapsing
 
                 // WebView2 user-data folder must be writable (default is the host .exe
                 // dir = Program Files). Set CreationProperties BEFORE the control gets a
@@ -54,7 +55,7 @@ namespace CadCopilot
                 _host.Controls.Add(_web);
                 _host.CreateControl();
 
-                _dock.AddChild(_host.Handle.ToInt32());
+                _dock.AddChild(_host.Handle.ToInt64());   // 64-bit HWND on x64 (AddChild takes Object)
                 _dock.DockingState = DockingStateEnum.kDockRight;
                 _dock.Visible = true;
 
