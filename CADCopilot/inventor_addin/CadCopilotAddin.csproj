@@ -13,9 +13,12 @@
 
   <ItemGroup>
     <!-- Adjust the version folder if you target Inventor 2026 instead of 2027. -->
+    <!-- EmbedInteropTypes=true makes ONE DLL work across Inventor 2026 + 2027
+         (binds to the stable COM type-library GUIDs, not a version-specific PIA).
+         The HintPath just needs ANY installed Inventor's interop to compile against. -->
     <Reference Include="Autodesk.Inventor.Interop">
       <HintPath>C:\Program Files\Autodesk\Inventor 2027\Bin\Public Assemblies\Autodesk.Inventor.Interop.dll</HintPath>
-      <EmbedInteropTypes>false</EmbedInteropTypes>
+      <EmbedInteropTypes>true</EmbedInteropTypes>
       <Private>false</Private>
     </Reference>
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2792.45" />
