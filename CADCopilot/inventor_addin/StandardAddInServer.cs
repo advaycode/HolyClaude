@@ -31,35 +31,44 @@ namespace CadCopilot
         {
             _app = addInSiteObject.Application;
             StartPanelServer();
-
-            UserInterfaceManager uim = _app.UserInterfaceManager;
-            _dock = uim.DockableWindows.Add(ClientId, "CadCopilotPanel", "CADCopilot");
-            _dock.ShowVisibilityCheckBox = true;
-
-            _host = new UserControl();
-            _web = new WebView2();
-            _web.Dock = DockStyle.Fill;
-            _host.Controls.Add(_web);
-            _host.CreateControl();
-            _dock.AddChild(_host.Handle.ToInt32());
-            _dock.DockingState = DockingStateEnum.kDockRight;
-            _dock.Visible = true;
-
-            // WebView2's default user-data folder is the host .exe dir (Program Files,
-            // not writable) — point it at a writable per-user folder or init fails.
-            string udf = System.IO.Path.Combine(
-                System.Environment.GetFolderPath(System.Environment.SpecialFolder.LocalApplicationData),
-                "CadCopilot", "WebView2");
-            try { System.IO.Directory.CreateDirectory(udf); } catch { }
-            CoreWebView2CreationProperties props = new CoreWebView2CreationProperties();
-            props.UserDataFolder = udf;
-            _web.CreationProperties = props;
-
-            _web.CoreWebView2InitializationCompleted += delegate (object s, Microsoft.Web.WebView2.Core.CoreWebView2InitializationCompletedEventArgs e)
+            try
             {
-                if (e.IsSuccess) NavigateWithRetry(0);
-            };
-            _web.EnsureCoreWebView2Async(null);
+                UserInterfaceManager uim = _app.UserInterfaceManager;
+                _dock = uim.DockableWindows.Add(ClientId, "CadCopilotPanel", "CADCopilot");
+                _dock.ShowVisibilityCheckBox = true;
+
+                // WebView2 user-data folder must be writable (default is the host .exe
+                // dir = Program Files). Set CreationProperties BEFORE the control gets a
+                // window handle, or the early init uses the bad default and blanks out.
+                string udf = System.IO.Path.Combine(
+                    System.Environment.GetFolderPath(System.Environment.SpecialFolder.LocalApplicationData),
+                    "CadCopilot", "WebView2");
+                try { System.IO.Directory.CreateDirectory(udf); } catch { }
+
+                _host = new UserControl();
+                _web = new WebView2();
+                CoreWebView2CreationProperties props = new CoreWebView2CreationProperties();
+                props.UserDataFolder = udf;
+                _web.CreationProperties = props;
+                _web.Dock = DockStyle.Fill;
+                _host.Controls.Add(_web);
+                _host.CreateControl();
+
+                _dock.AddChild(_host.Handle.ToInt32());
+                _dock.DockingState = DockingStateEnum.kDockRight;
+                _dock.Visible = true;
+
+                _web.CoreWebView2InitializationCompleted += delegate (object s, Microsoft.Web.WebView2.Core.CoreWebView2InitializationCompletedEventArgs e)
+                {
+                    if (e.IsSuccess) NavigateWithRetry(0);
+                };
+                _web.EnsureCoreWebView2Async(null);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(ex.ToString(), "CADCopilot add-in error",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
         }
 
         private void NavigateWithRetry(int attempt)
