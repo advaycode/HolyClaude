@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CADCopilot</title>
+<style>
+  :root{--bg:#0e1116;--panel:#161b22;--edge:#272e38;--txt:#e6edf3;--mut:#8b949e;
+        --accent:#e07a3f;--accent2:#3b82f6;--ok:#3fb950;--err:#f85149;}
+  *{box-sizing:border-box}
+  body{margin:0;height:100vh;display:flex;flex-direction:column;background:var(--bg);
+       color:var(--txt);font:14px/1.5 -apple-system,Segoe UI,Roboto,sans-serif}
+  header{display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--edge);background:var(--panel)}
+  header .logo{font-weight:700;letter-spacing:.3px}
+  header .logo b{color:var(--accent)}
+  header .tag{color:var(--mut);font-size:12px}
+  header .sp{flex:1}
+  button{background:#21262d;color:var(--txt);border:1px solid var(--edge);border-radius:7px;
+         padding:7px 12px;cursor:pointer;font-size:13px}
+  button:hover{border-color:#3d4654}
+  button.send{background:var(--accent);border-color:var(--accent);color:#1a1206;font-weight:600}
+  button:disabled{opacity:.5;cursor:default}
+  #log{flex:1;overflow:auto;padding:18px;display:flex;flex-direction:column;gap:14px}
+  .msg{max-width:860px;width:100%}
+  .role{font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--mut);margin-bottom:4px}
+  .bubble{background:var(--panel);border:1px solid var(--edge);border-radius:10px;padding:11px 13px;white-space:pre-wrap;word-wrap:break-word}
+  .user .bubble{background:#1b2330;border-color:#2b3950}
+  .think{color:var(--mut);font-style:italic;font-size:13px;border-left:2px solid var(--edge);padding-left:10px;margin:6px 0;white-space:pre-wrap}
+  .tool{display:inline-block;font-family:ui-monospace,Consolas,monospace;font-size:12px;
+        background:#10261a;border:1px solid #1f5133;color:var(--ok);border-radius:6px;padding:3px 8px;margin:5px 6px 0 0}
+  .tool.err{background:#2a1416;border-color:#5b2326;color:var(--err)}
+  img.shot{display:block;max-width:100%;border:1px solid var(--edge);border-radius:8px;margin:8px 0}
+  .err{color:var(--err)}
+  footer{border-top:1px solid var(--edge);background:var(--panel);padding:12px 16px;display:flex;gap:10px}
+  textarea{flex:1;resize:none;height:46px;background:#0c0f14;color:var(--txt);border:1px solid var(--edge);
+           border-radius:9px;padding:11px 12px;font:14px/1.4 inherit}
+  textarea:focus{outline:none;border-color:var(--accent2)}
+  .hint{color:var(--mut);font-size:12px;padding:6px 18px}
+</style>
+</head>
+<body>
+<header>
+  <span class="logo"><b>CAD</b>Copilot</span>
+  <span class="tag" id="tag">Inventor · local (Ollama)</span>
+  <span class="sp"></span>
+  <button id="reset">New build</button>
+</header>
+<div id="log"></div>
+<div class="hint" id="hint">Have Inventor open. Try: “build a goBILDA motor-mount bracket, 96×48 mm, 8 mm hole grid, 24 mm motor bore, then export an STL”.</div>
+<footer>
+  <textarea id="in" placeholder="Describe what to build…"></textarea>
+  <button class="send" id="send">Build ▸</button>
+</footer>
+<script>
+const log=document.getElementById('log'), input=document.getElementById('in'),
+      sendBtn=document.getElementById('send'), resetBtn=document.getElementById('reset');
+
+function el(cls,parent){const d=document.createElement('div');d.className=cls;(parent||log).appendChild(d);return d;}
+function bubbleMsg(role){const m=el('msg '+role);el('role',m).textContent=role;const b=el('bubble',m);b.textContent='';return {m,b};}
+function scroll(){log.scrollTop=log.scrollHeight;}
+
+let busy=false;
+async function send(){
+  const text=input.value.trim(); if(!text||busy) return;
+  busy=true; sendBtn.disabled=true; input.value='';
+  bubbleMsg('user').b.textContent=text;
+  const asst=bubbleMsg('assistant'); let thinkBox=null;
+  scroll();
+  try{
+    const resp=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:text})});
+    const reader=resp.body.getReader(), dec=new TextDecoder(); let buf='';
+    while(true){
+      const {value,done}=await reader.read(); if(done) break;
+      buf+=dec.decode(value,{stream:true}); let i;
+      while((i=buf.indexOf('\n'))>=0){
+        const line=buf.slice(0,i); buf=buf.slice(i+1); if(!line.trim()) continue;
+        const ev=JSON.parse(line);
+        if(ev.type==='text'){ asst.b.textContent+=ev.text; }
+        else if(ev.type==='thinking'){ if(!thinkBox) thinkBox=el('think',asst.m); thinkBox.textContent+=ev.text; }
+        else if(ev.type==='tool_call'){ const t=el('tool',asst.m); t.textContent='🔧 '+ev.name+'('+JSON.stringify(ev.input).slice(0,120)+')'; }
+        else if(ev.type==='image'){ const img=document.createElement('img'); img.className='shot'; img.src='data:'+ev.media_type+';base64,'+ev.data; asst.m.appendChild(img); }
+        else if(ev.type==='error'){ const e=el('err',asst.m); e.textContent='⚠ '+ev.text; }
+        scroll();
+      }
+    }
+  }catch(e){ const er=el('err',asst.m); er.textContent='⚠ '+e; }
+  busy=false; sendBtn.disabled=false; input.focus();
+}
+sendBtn.onclick=send;
+input.addEventListener('keydown',e=>{ if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send();} });
+resetBtn.onclick=async()=>{ await fetch('/api/reset',{method:'POST'}); log.innerHTML=''; input.focus(); };
+input.focus();
+</script>
+</body>
+</html>

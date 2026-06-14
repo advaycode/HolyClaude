@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <AssemblyName>CadCopilotAddin</AssemblyName>
+    <RootNamespace>CadCopilot</RootNamespace>
+    <!-- COM-visible so Inventor can instantiate the add-in by ClassId -->
+    <ComVisible>true</ComVisible>
+    <EnableDefaultCompileItems>true</EnableDefaultCompileItems>
+    <Platforms>x64</Platforms>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Adjust the version folder if you target Inventor 2026 instead of 2027. -->
+    <Reference Include="Autodesk.Inventor.Interop">
+      <HintPath>C:\Program Files\Autodesk\Inventor 2027\Bin\Public Assemblies\Autodesk.Inventor.Interop.dll</HintPath>
+      <EmbedInteropTypes>false</EmbedInteropTypes>
+      <Private>false</Private>
+    </Reference>
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2792.45" />
+    <!-- Lets `dotnet build` target net48 without a full .NET Framework dev pack installed -->
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+  </ItemGroup>
+
+</Project>

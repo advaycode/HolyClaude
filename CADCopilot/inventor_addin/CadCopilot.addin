@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Addin Type="Standard">
+  <!-- ClassId/ClientId must match the [Guid(...)] on StandardAddInServer -->
+  <ClassId>{8F3C9A21-7B4D-4E2A-9C11-2A6E5D3F1B07}</ClassId>
+  <ClientId>{8F3C9A21-7B4D-4E2A-9C11-2A6E5D3F1B07}</ClientId>
+  <DisplayName>CADCopilot</DisplayName>
+  <Description>CADCopilot AI chat panel docked inside Inventor.</Description>
+  <Assembly>CadCopilotAddin.dll</Assembly>
+  <LoadOnStartUp>1</LoadOnStartUp>
+  <UserUnloadable>1</UserUnloadable>
+  <Hidden>0</Hidden>
+  <SupportedSoftwareVersionGreaterThan>25..</SupportedSoftwareVersionGreaterThan>
+</Addin>

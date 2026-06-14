@@ -1,0 +1,18 @@
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+# generated CAD + logs live outside the vault (CAD_OUTPUT_DIR); never commit binaries
+*.ipt
+*.iam
+*.stl
+*.step
+*.stp
+*.3mf
+.cad_mcp/
+index/*.db
+# .NET add-in build artifacts (rebuilt by inventor_addin/build.bat)
+inventor_addin/bin/
+inventor_addin/libs/
+inventor_addin/obj/

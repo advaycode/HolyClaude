@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "cad-mcp": {
+      "command": "C:\\Users\\advay\\Obsidian\\CADCopilot\\.venv\\Scripts\\python.exe",
+      "args": ["-m", "cad_mcp.server"],
+      "env": {
+        "PYTHONPATH": "C:\\Users\\advay\\Obsidian\\CADCopilot\\src",
+        "PYTHONIOENCODING": "utf-8",
+        "CAD_BACKEND": "inventor",
+        "CAD_OUTPUT_DIR": "C:\\Users\\advay\\Documents\\CacheCAD",
+        "CAD_UNIT_MODE": "inch"
+      }
+    }
+  }
+}

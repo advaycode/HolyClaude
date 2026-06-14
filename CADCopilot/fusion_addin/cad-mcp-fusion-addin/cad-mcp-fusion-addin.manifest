@@ -1,0 +1,11 @@
+{
+    "autodeskProduct": "Fusion360",
+    "type": "addin",
+    "id": "cad-mcp-fusion-addin-advay",
+    "author": "Advay",
+    "description": { "": "CADCopilot bridge — drives Fusion from the CADCopilot MCP over a localhost socket, marshaling all adsk calls onto the main thread." },
+    "version": "0.1.0",
+    "runOnStartup": false,
+    "supportedOS": "windows|mac",
+    "editEnabled": true
+}
