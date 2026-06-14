@@ -65,6 +65,8 @@ async function send(){
   busy=true; sendBtn.disabled=true; input.value='';
   bubbleMsg('user').b.textContent=text;
   const asst=bubbleMsg('assistant'); let thinkBox=null;
+  let status=el('think',asst.m);
+  status.textContent='⏳ working locally — the first reply can take a minute while gpt-oss loads into RAM. Tool calls and text will stream in below as it builds.';
   scroll();
   try{
     const resp=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:text})});
@@ -75,6 +77,7 @@ async function send(){
       while((i=buf.indexOf('\n'))>=0){
         const line=buf.slice(0,i); buf=buf.slice(i+1); if(!line.trim()) continue;
         const ev=JSON.parse(line);
+        if(status && ev.type!=='done'){ status.remove(); status=null; }
         if(ev.type==='text'){ asst.b.textContent+=ev.text; }
         else if(ev.type==='thinking'){ if(!thinkBox) thinkBox=el('think',asst.m); thinkBox.textContent+=ev.text; }
         else if(ev.type==='tool_call'){ const t=el('tool',asst.m); t.textContent='🔧 '+ev.name+'('+JSON.stringify(ev.input).slice(0,120)+')'; }

@@ -131,6 +131,43 @@ def _post(payload: dict) -> dict:
         return json.loads(r.read().decode("utf-8"))
 
 
+def _chat_stream(payload: dict, emit) -> dict:
+    """Stream one model step, emitting content/thinking deltas live to the browser
+    so the user sees progress immediately. Returns the assembled assistant message
+    (content + any tool_calls)."""
+    payload = dict(payload)
+    payload["stream"] = True
+    req = urllib.request.Request(
+        f"{OLLAMA_URL}/api/chat",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"})
+    content: list[str] = []
+    tool_calls: list = []
+    role = "assistant"
+    with urllib.request.urlopen(req, timeout=STEP_TIMEOUT) as r:
+        for raw in r:
+            line = raw.decode("utf-8", "ignore").strip()
+            if not line:
+                continue
+            obj = json.loads(line)
+            m = obj.get("message") or {}
+            if m.get("role"):
+                role = m["role"]
+            if m.get("thinking"):
+                emit({"type": "thinking", "text": m["thinking"]})
+            if m.get("content"):
+                content.append(m["content"])
+                emit({"type": "text", "text": m["content"]})
+            if m.get("tool_calls"):
+                tool_calls.extend(m["tool_calls"])
+            if obj.get("done"):
+                break
+    out = {"role": role, "content": "".join(content)}
+    if tool_calls:
+        out["tool_calls"] = tool_calls
+    return out
+
+
 def run_turn(user_text: str, emit: Callable[[dict], None], max_steps: int = 40) -> None:
     # connectivity check
     try:
@@ -148,8 +185,8 @@ def run_turn(user_text: str, emit: Callable[[dict], None], max_steps: int = 40) 
 
     for _ in range(max_steps):
         try:
-            resp = _post({"model": MODEL, "messages": _messages, "tools": tools,
-                          "stream": False, "options": {"temperature": 0.2, "num_ctx": NUM_CTX}})
+            msg = _chat_stream({"model": MODEL, "messages": _messages, "tools": tools,
+                                "options": {"temperature": 0.2, "num_ctx": NUM_CTX}}, emit)
         except urllib.error.HTTPError as e:
             emit({"type": "error", "text": f"Ollama error: {e.read().decode('utf-8', 'ignore')[:300]} "
                   f"(is the model '{MODEL}' pulled? run: ollama pull {MODEL})"})
@@ -158,11 +195,7 @@ def run_turn(user_text: str, emit: Callable[[dict], None], max_steps: int = 40) 
             emit({"type": "error", "text": f"Ollama request failed: {e}"})
             break
 
-        msg = resp.get("message", {}) or {}
-        _messages.append(msg)
-
-        if msg.get("content"):
-            emit({"type": "text", "text": msg["content"]})
+        _messages.append({k: msg[k] for k in ("role", "content", "tool_calls") if k in msg})
 
         tool_calls = msg.get("tool_calls") or []
         if not tool_calls:
