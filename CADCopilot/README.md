@@ -52,6 +52,31 @@ To use Fusion instead of Inventor:
 The add-in marshals every `adsk` call onto Fusion's main thread (a background socket
 thread only fires a CustomEvent), so it won't crash Fusion.
 
+## Run the model on a remote GPU (local + free, much faster)
+
+The panel uses a local Ollama model (default `qwen2.5:14b-instruct`). On a CPU that's
+slow; you can instead point it at a friend's GPU box (e.g. an RTX 4070) and keep it
+100% local/free. CADCopilot reads the address from `CAD_OLLAMA_URL`.
+
+**If you're on different networks, both PCs need [Tailscale](https://tailscale.com)**
+(a free, secure mesh VPN — without it your PCs have no route to each other):
+
+1. **Both PCs:** install Tailscale → https://tailscale.com/download, and sign in
+   with the **same account** (simplest). Each machine then gets a stable `100.x.x.x`
+   address. (Windows: `winget install Tailscale.Tailscale`, then open Tailscale and
+   log in, or run `tailscale up`.)
+2. **GPU host (the friend):** install Ollama, make sure Tailscale is running, then run
+   `remote-gpu-host/start.bat`. It serves Ollama on the network, opens the firewall,
+   pulls the model, and prints the `http://100.x.x.x:11434` address to send you.
+   (Leave its "Ollama Server" window open while building.)
+3. **This PC:** `connect_to_gpu_host.bat 100.x.x.x` — it tests reachability, then sets
+   `CAD_OLLAMA_URL`. Restart Inventor so the panel relaunches against the GPU.
+   Switch back to your CPU anytime with `connect_to_gpu_host.bat local`.
+
+> Same Wi‑Fi/LAN? Skip Tailscale and use the `192.168.x.x` address `start.bat` prints.
+> Never port-forward 11434 to the open internet — Ollama has no auth; Tailscale keeps
+> it private to your devices.
+
 ## Try it (flagship)
 After restarting Claude Code (so the `cad-mcp` tools load), just ask, e.g.
 *"build a goBILDA motor-mount bracket and export an STL"* or *"build a V8 engine for
