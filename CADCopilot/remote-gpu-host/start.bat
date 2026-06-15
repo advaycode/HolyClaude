@@ -73,15 +73,22 @@ set "LANIP="
 for /f "delims=" %%a in ('powershell -NoProfile -Command "(Test-Connection -ComputerName (hostname) -Count 1 -ErrorAction SilentlyContinue).IPV4Address.IPAddressToString" 2^>nul') do set "LANIP=%%a"
 set "TSIP="
 where tailscale >nul 2>&1 && for /f "delims=" %%t in ('tailscale ip -4 2^>nul') do if not defined TSIP set "TSIP=%%t"
+set "TSSTATUS=none"
+where tailscale >nul 2>&1 && set "TSSTATUS=installed"
+if "%TSSTATUS%"=="installed" if defined TSIP set "TSSTATUS=connected"
 
 echo.
 echo ============================================================
 echo   READY - send ONE of these addresses to Advay:
 echo ============================================================
-if defined LANIP echo   Same Wi-Fi / LAN :  http://%LANIP%:11434
-if defined TSIP  echo   Tailscale        :  http://%TSIP%:11434
-if not defined LANIP echo   ^(couldn't auto-detect your IP - run: ipconfig, use the IPv4 Address^)
-echo   Model            :  %MODEL%
+echo   ^>^> You two are on DIFFERENT networks, so use the Tailscale one. ^<^<
+if defined TSIP echo   Tailscale (use this) :  http://%TSIP%:11434
+if defined LANIP echo   Same-Wi-Fi only      :  http://%LANIP%:11434
+if "%TSSTATUS%"=="installed" echo   [!] Tailscale installed but NOT connected. Run:  tailscale up
+if "%TSSTATUS%"=="installed" echo       Sign in with the SAME account as Advay, then re-run this file.
+if "%TSSTATUS%"=="none" echo   [!] Tailscale NOT installed. Get it on BOTH PCs (same login):
+if "%TSSTATUS%"=="none" echo       https://tailscale.com/download   then re-run this file.
+echo   Model                :  %MODEL%
 echo ============================================================
 echo  Keep the minimized "Ollama Server" window OPEN while he builds.
 echo  Closing it stops serving. Next time you can just open the
