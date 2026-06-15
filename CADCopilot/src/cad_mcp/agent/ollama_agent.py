@@ -193,8 +193,12 @@ def run_turn(user_text: str, emit: Callable[[dict], None], max_steps: int = MAX_
     try:
         urllib.request.urlopen(f"{OLLAMA_URL}/api/tags", timeout=5).read()
     except Exception:
-        emit({"type": "error", "text": f"Can't reach Ollama at {OLLAMA_URL}. "
-              "Start the Ollama app (system tray) or run `ollama serve`."})
+        _local = "127.0.0.1" in OLLAMA_URL or "localhost" in OLLAMA_URL
+        hint = ("Start the Ollama app (system tray) or run `ollama serve`." if _local else
+                f"Remote host unreachable. On the GPU box: set OLLAMA_HOST=0.0.0.0 and restart "
+                f"Ollama, allow TCP 11434 through its firewall, and make sure both machines are on "
+                f"the same network (or Tailscale). Test from this PC: curl {OLLAMA_URL}/api/tags")
+        emit({"type": "error", "text": f"Can't reach Ollama at {OLLAMA_URL}. " + hint})
         emit({"type": "done"})
         return
 
