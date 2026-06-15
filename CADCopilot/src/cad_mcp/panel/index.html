@@ -66,7 +66,7 @@ async function send(){
   bubbleMsg('user').b.textContent=text;
   const asst=bubbleMsg('assistant'); let thinkBox=null;
   let status=el('think',asst.m);
-  status.textContent='⏳ working locally — the first reply can take a minute while gpt-oss loads into RAM. Tool calls and text will stream in below as it builds.';
+  status.textContent='⏳ working locally — the first reply can take a minute while the model loads into RAM. Tool calls and text will stream in below as it builds.';
   scroll();
   try{
     const resp=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:text})});

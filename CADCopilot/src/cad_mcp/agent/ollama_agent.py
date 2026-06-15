@@ -19,7 +19,10 @@ from typing import Any, Callable
 from ..server import mcp
 
 OLLAMA_URL = os.environ.get("CAD_OLLAMA_URL", "http://127.0.0.1:11434")
-MODEL = os.environ.get("CAD_OLLAMA_MODEL", "gpt-oss:20b")
+# qwen2.5:14b-instruct has reliable native tool-calling in Ollama and is faster on
+# CPU than gpt-oss:20b (whose harmony tool-call format frequently emits malformed
+# calls that crash Ollama's parser with a 500). Override with CAD_OLLAMA_MODEL.
+MODEL = os.environ.get("CAD_OLLAMA_MODEL", "qwen2.5:14b-instruct")
 NUM_CTX = int(os.environ.get("CAD_OLLAMA_CTX", "12288"))
 STEP_TIMEOUT = int(os.environ.get("CAD_OLLAMA_TIMEOUT", "900"))  # seconds per model step (CPU is slow)
 MAX_STEPS = int(os.environ.get("CAD_MAX_STEPS", "800"))  # tool-call budget for a full multi-part autonomous build
@@ -200,17 +203,35 @@ def run_turn(user_text: str, emit: Callable[[dict], None], max_steps: int = MAX_
     _messages.append({"role": "user", "content": user_text})
     tools = _tools()
 
+    bad_calls = 0  # consecutive malformed-tool-call parse failures
     for _ in range(max_steps):
         try:
             msg = _chat_stream({"model": MODEL, "messages": _messages, "tools": tools,
                                 "options": {"temperature": 0.2, "num_ctx": NUM_CTX}}, emit)
         except urllib.error.HTTPError as e:
-            emit({"type": "error", "text": f"Ollama error: {e.read().decode('utf-8', 'ignore')[:300]} "
+            body = e.read().decode("utf-8", "ignore")[:300]
+            # gpt-oss-style models sometimes emit a malformed tool call that Ollama's
+            # parser rejects with a 500. Don't kill the build — nudge and retry.
+            if "parsing tool call" in body or e.code >= 500:
+                bad_calls += 1
+                if bad_calls <= 5:
+                    emit({"type": "thinking", "text": "(recovering from a malformed tool call — retrying)"})
+                    _messages.append({"role": "user", "content":
+                        "Your previous reply could not be parsed as a tool call. Respond with "
+                        "EXACTLY ONE tool call whose arguments are valid JSON (no empty keys), or "
+                        "plain text only if the build is finished. Continue the build."})
+                    continue
+                emit({"type": "error", "text": f"Model keeps emitting unparseable tool calls "
+                      f"({MODEL}). Switch models: set CAD_OLLAMA_MODEL=qwen2.5:14b-instruct. "
+                      f"Detail: {body}"})
+                break
+            emit({"type": "error", "text": f"Ollama error: {body} "
                   f"(is the model '{MODEL}' pulled? run: ollama pull {MODEL})"})
             break
         except Exception as e:  # noqa: BLE001
             emit({"type": "error", "text": f"Ollama request failed: {e}"})
             break
+        bad_calls = 0
 
         _messages.append({k: msg[k] for k in ("role", "content", "tool_calls") if k in msg})
 
